@@ -1,0 +1,16 @@
+namespace: blueprint
+name: vault
+version: 0.1.0
+readme: README.md
+authors:
+  - ICS Platform Engineering
+description: Reusable Vault runtime and lookup collection for multi-org automation.
+license:
+  - MIT
+repository: https://github.com/iac-foundry/ansible-collection-vault
+homepage: https://github.com/iac-foundry/ansible-collection-vault
+issues: https://github.com/iac-foundry/ansible-collection-vault/issues
+tags:
+  - vault
+  - secrets
+  - automation

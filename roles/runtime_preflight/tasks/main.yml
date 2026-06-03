@@ -1,0 +1,16 @@
+---
+- name: Verify vault CLI is present in PATH
+  ansible.builtin.command: command -v vault
+  register: blueprint_vault_cli_check
+  changed_when: false
+  failed_when: blueprint_vault_cli_check.rc != 0
+
+- name: Verify configured Vault endpoint is reachable
+  ansible.builtin.command: vault status
+  environment:
+    VAULT_ADDR: "{{ blueprint_vault_addr }}"
+    VAULT_CACERT: "{{ blueprint_vault_cacert | default('') }}"
+    VAULT_SKIP_VERIFY: "{{ 'true' if (blueprint_vault_skip_verify | default(false)) else 'false' }}"
+  register: blueprint_vault_status_check
+  changed_when: false
+  failed_when: blueprint_vault_status_check.rc != 0
