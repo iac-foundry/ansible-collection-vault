@@ -1,4 +1,0 @@
----
-blueprint_vault_addr: "http://127.0.0.1:8100"
-blueprint_vault_cacert: ""
-blueprint_vault_skip_verify: false

@@ -1,0 +1,47 @@
+---
+# Reusable release template for a single blueprints.* collection repo.
+# Copy into the collection repo as .github/workflows/release.yml.
+# Triggers on a version tag, re-runs the gates, builds, and publishes.
+
+name: blueprints-release
+
+"on":
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ansible-core ansible-lint
+
+      - name: Design-principle guard
+        run: bash ci/no_hidden_deps_guard.sh .
+
+      - name: Lint
+        run: ansible-lint
+
+      - name: Build collection
+        run: ansible-galaxy collection build --output-path dist/
+
+      # Channel A — attach the tarball to the GitHub release (git-source consumers).
+      - name: Attach artifact to GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+
+      # Channel B — publish to a Galaxy / Automation Hub instance (optional).
+      # Enable by setting the GALAXY_SERVER and GALAXY_TOKEN repo secrets.
+      - name: Publish to Galaxy / Automation Hub
+        if: ${{ secrets.GALAXY_TOKEN != '' }}
+        env:
+          GALAXY_TOKEN: ${{ secrets.GALAXY_TOKEN }}
+          GALAXY_SERVER: ${{ secrets.GALAXY_SERVER }}
+        run: |
+          ansible-galaxy collection publish dist/*.tar.gz \
+            --server "${GALAXY_SERVER}" --token "${GALAXY_TOKEN}"

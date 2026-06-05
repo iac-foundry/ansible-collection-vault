@@ -1,0 +1,14 @@
+---
+- name: Assert required inputs are supplied by the caller
+  ansible.builtin.assert:
+    that:
+      - vault_client_server_addr | length > 0
+    fail_msg: "vault_client_server_addr must be supplied by the caller."
+  tags:
+    - client
+
+- name: Scaffold convergence placeholder
+  ansible.builtin.debug:
+    msg: "Scaffold for client: configure vault client against {{ vault_client_server_addr }}."
+  tags:
+    - client

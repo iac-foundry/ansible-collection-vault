@@ -1,0 +1,3 @@
+---
+vault_client_server_addr: ""        # REQUIRED: address of the server this host is a client of
+vault_client_config_dir: "/etc/vault"

@@ -1,0 +1,11 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Include blueprints.vault.container_server with caller-supplied variables
+      ansible.builtin.include_role:
+        name: blueprints.vault.container_server
+      vars:
+        vault_server_image: "example/vault:latest"
+        vault_server_admin_secret: "dummy-not-a-real-secret"

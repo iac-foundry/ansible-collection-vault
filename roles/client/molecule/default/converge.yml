@@ -1,0 +1,10 @@
+---
+- name: Converge
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Include blueprints.vault.client with caller-supplied variables
+      ansible.builtin.include_role:
+        name: blueprints.vault.client
+      vars:
+        vault_client_server_addr: "https://example.invalid"

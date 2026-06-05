@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: client
+  author: Platform Engineering
+  description: "Configure a host as a Vault client."
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - blueprints
+    - vault
+dependencies: []

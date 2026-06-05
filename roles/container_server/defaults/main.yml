@@ -1,0 +1,11 @@
+---
+# Common deployment-model interface — identical across the container_server /
+# systemd_server / kubernetes_server roles so callers can switch models without
+# renaming variables (BLUEPRINTS_VARIABLE_STANDARDS.md §5).
+vault_server_image: ""              # REQUIRED: caller-supplied image/package ref; no org default
+vault_server_http_port: 8080
+vault_server_https_port: 8443
+vault_server_data_dir: "/var/lib/vault"
+vault_server_tls_cert: ""           # when set (with key), TLS is enabled automatically
+vault_server_tls_key: ""
+vault_server_admin_secret: ""       # caller-supplied secret; never retrieved by this role

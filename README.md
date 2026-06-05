@@ -1,14 +1,11 @@
-# ansible-collection-vault
+# blueprints.vault
 
-Ansible source repository for the `blueprint.vault` collection.
+Reusable, org-agnostic HashiCorp Vault building blocks (no hidden dependencies).
 
-## Initial scope
+**No hidden dependencies.** This collection assumes no other `blueprints` collection exists and
+queries no external system at runtime. All configuration and secrets are caller-supplied variables.
+See [../../docs/design/BLUEPRINTS_DESIGN_PRINCIPLES.md](../../docs/design/BLUEPRINTS_DESIGN_PRINCIPLES.md).
 
-- Runtime preflight role for deterministic Vault execution checks.
-- Future `vault_kv` lookup implementation aligned to AKB Vault roadmap.
+## Roles
 
-## Design constraints
-
-- Multi-org reusable defaults.
-- Fail-fast behavior.
-- No hardcoded organization endpoints or secret paths in defaults.
+See `roles/`. Each role README states its inputs, deployment model, and non-goals.

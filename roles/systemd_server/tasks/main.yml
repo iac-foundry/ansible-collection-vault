@@ -1,0 +1,30 @@
+---
+- name: Assert required inputs are supplied by the caller
+  ansible.builtin.assert:
+    that:
+      - vault_server_image | length > 0
+    fail_msg: "vault_server_image must be supplied by the caller (no org-specific default)."
+    success_msg: "Required inputs present."
+  tags:
+    - systemd_server
+
+- name: Determine whether TLS material was supplied
+  ansible.builtin.set_fact:
+    vault_server_tls_enabled: "{{ (vault_server_tls_cert | length > 0) and (vault_server_tls_key | length > 0) }}"
+  tags:
+    - systemd_server
+
+- name: Record caller-supplied secret presence (the secret is an input, never retrieved here)
+  ansible.builtin.set_fact:
+    vault_server_admin_secret_present: "{{ vault_server_admin_secret | length > 0 }}"
+  no_log: true
+  tags:
+    - systemd_server
+
+- name: Scaffold convergence placeholder
+  ansible.builtin.debug:
+    msg: >-
+      Scaffold for systemd_server: implement vault using the common server interface.
+      TLS enabled={{ vault_server_tls_enabled }}.
+  tags:
+    - systemd_server

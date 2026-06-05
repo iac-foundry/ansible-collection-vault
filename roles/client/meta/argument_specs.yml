@@ -1,0 +1,13 @@
+---
+argument_specs:
+  main:
+    short_description: "client configuration for vault."
+    options:
+      vault_client_server_addr:
+        type: str
+        required: true
+        description: Address of the server this host is a client of (caller-supplied).
+      vault_client_config_dir:
+        type: str
+        default: "/etc/vault"
+        description: Client configuration directory.

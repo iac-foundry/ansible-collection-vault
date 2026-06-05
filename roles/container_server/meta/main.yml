@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: container_server
+  author: Platform Engineering
+  description: "Run Vault as a container."
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - blueprints
+    - vault
+dependencies: []

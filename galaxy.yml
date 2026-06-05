@@ -1,16 +1,20 @@
-namespace: blueprint
+---
+namespace: blueprints
 name: vault
 version: 0.1.0
 readme: README.md
 authors:
-  - ICS Platform Engineering
-description: Reusable Vault runtime and lookup collection for multi-org automation.
+  - Platform Engineering
+description: "Reusable, org-agnostic HashiCorp Vault building blocks (no hidden dependencies)."
 license:
   - MIT
-repository: https://github.com/iac-foundry/ansible-collection-vault
-homepage: https://github.com/iac-foundry/ansible-collection-vault
-issues: https://github.com/iac-foundry/ansible-collection-vault/issues
 tags:
+  - security
+  - blueprints
   - vault
-  - secrets
-  - automation
+repository: https://github.com/iac-foundry/ansible-collection-vault
+dependencies: {}
+build_ignore:
+  - .github
+  - "*.tar.gz"
+  - extensions

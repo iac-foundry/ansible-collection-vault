@@ -1,0 +1,33 @@
+---
+argument_specs:
+  main:
+    short_description: "container_server deployment of vault."
+    options:
+      vault_server_image:
+        type: str
+        required: true
+        description: Image or package reference (caller-supplied; no org default).
+      vault_server_http_port:
+        type: int
+        default: 8080
+        description: HTTP port.
+      vault_server_https_port:
+        type: int
+        default: 8443
+        description: HTTPS port (used when TLS material is supplied).
+      vault_server_data_dir:
+        type: str
+        default: "/var/lib/vault"
+        description: Persistent data directory.
+      vault_server_tls_cert:
+        type: str
+        default: ""
+        description: PEM certificate; when set with the key, TLS is enabled automatically.
+      vault_server_tls_key:
+        type: str
+        default: ""
+        description: PEM private key paired with vault_server_tls_cert.
+      vault_server_admin_secret:
+        type: str
+        default: ""
+        description: Caller-supplied admin secret; never retrieved by this role.
