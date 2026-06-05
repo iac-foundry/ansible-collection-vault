@@ -1,0 +1,42 @@
+---
+- name: Ensure curl and unzip are installed
+  ansible.builtin.package:
+    name:
+      - curl
+      - unzip
+    state: present
+  become: true
+
+- name: Set Vault CLI archive filename
+  ansible.builtin.set_fact:
+    vault_agent_cli_zip: "vault_{{ vault_agent_cli_version }}_linux_amd64.zip"
+
+- name: Download Vault CLI archive
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/vault/{{ vault_agent_cli_version }}/{{ vault_agent_cli_zip }}"
+    dest: "/tmp/{{ vault_agent_cli_zip }}"
+    mode: '0644'
+  become: true
+  register: vault_agent_cli_download
+  until: vault_agent_cli_download is succeeded
+  retries: 3
+  delay: 5
+
+- name: Unarchive Vault CLI
+  ansible.builtin.unarchive:
+    src: "/tmp/{{ vault_agent_cli_zip }}"
+    dest: /tmp
+    remote_src: true
+  become: true
+  when: vault_agent_cli_download.changed
+
+- name: Install vault binary
+  ansible.builtin.copy:
+    src: /tmp/vault
+    dest: "{{ vault_agent_cli_bin_path }}"
+    owner: root
+    group: root
+    mode: '0755'
+    remote_src: true
+  become: true
+  when: vault_agent_cli_download.changed

@@ -1,0 +1,30 @@
+---
+- name: Deploy Vault Agent HCL configuration
+  ansible.builtin.template:
+    src: vault-agent.hcl.j2
+    dest: "{{ vault_agent_config_path }}"
+    owner: root
+    group: "{{ vault_agent_group }}"
+    mode: '0640'
+  become: true
+  notify: Restart Vault Agent
+
+- name: Deploy Vault Agent systemd service unit
+  ansible.builtin.template:
+    src: vault-agent.service.j2
+    dest: "/etc/systemd/system/{{ vault_agent_service_name }}.service"
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  notify:
+    - Reload systemd daemon
+    - Restart Vault Agent
+
+- name: Enable and start Vault Agent
+  ansible.builtin.systemd:
+    name: "{{ vault_agent_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+  become: true

@@ -1,0 +1,49 @@
+---
+# Write AppRole credential files when values are provided, then validate
+# that the required files are present before the agent starts.
+
+- name: Write role_id file from provided value
+  ansible.builtin.copy:
+    content: "{{ vault_agent_approle_role_id | trim }}\n"
+    dest: "{{ vault_agent_approle_role_id_file }}"
+    owner: "{{ vault_agent_user }}"
+    group: "{{ vault_agent_group }}"
+    mode: '0600'
+  when: (vault_agent_approle_role_id | default('') | trim) | length > 0
+  become: true
+  no_log: true
+
+- name: Write secret_id file from provided value
+  ansible.builtin.copy:
+    content: "{{ vault_agent_approle_secret_id | trim }}\n"
+    dest: "{{ vault_agent_approle_secret_id_file }}"
+    owner: "{{ vault_agent_user }}"
+    group: "{{ vault_agent_group }}"
+    mode: '0600'
+  when: (vault_agent_approle_secret_id | default('') | trim) | length > 0
+  become: true
+  no_log: true
+
+- name: Check whether role_id file exists
+  ansible.builtin.stat:
+    path: "{{ vault_agent_approle_role_id_file }}"
+  register: vault_agent_role_id_stat
+  become: true
+
+- name: Check whether secret_id file exists
+  ansible.builtin.stat:
+    path: "{{ vault_agent_approle_secret_id_file }}"
+  register: vault_agent_secret_id_stat
+  become: true
+
+- name: Fail when AppRole credentials are unavailable
+  ansible.builtin.fail:
+    msg: >-
+      AppRole credentials are required but not available.
+      Provide vault_agent_approle_role_id / vault_agent_approle_secret_id,
+      seed them via vault_agent_bootstrap_staging_dir, or set
+      vault_agent_require_credentials: false to defer credential delivery.
+  when:
+    - vault_agent_require_credentials | bool
+    - not (vault_agent_role_id_stat.stat.exists | default(false))
+      or not (vault_agent_secret_id_stat.stat.exists | default(false))

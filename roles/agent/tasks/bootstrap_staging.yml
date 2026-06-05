@@ -1,0 +1,44 @@
+---
+# Move AppRole credentials written by Terraform / cloud-init from a staging
+# directory to the Vault Agent data directory, then remove the staging dir.
+
+- name: Stat bootstrap staging directory
+  ansible.builtin.stat:
+    path: "{{ vault_agent_bootstrap_staging_dir }}"
+  register: vault_agent_staging_stat
+  become: true
+
+- name: Claim staged role_id
+  ansible.builtin.copy:
+    src: "{{ vault_agent_bootstrap_staging_dir }}/role_id"
+    dest: "{{ vault_agent_approle_role_id_file }}"
+    owner: "{{ vault_agent_user }}"
+    group: "{{ vault_agent_group }}"
+    mode: '0600'
+    remote_src: true
+  when:
+    - vault_agent_staging_stat.stat.isdir | default(false)
+    - (vault_agent_bootstrap_staging_dir + '/role_id') is file
+  become: true
+  no_log: true
+
+- name: Claim staged secret_id
+  ansible.builtin.copy:
+    src: "{{ vault_agent_bootstrap_staging_dir }}/secret_id"
+    dest: "{{ vault_agent_approle_secret_id_file }}"
+    owner: "{{ vault_agent_user }}"
+    group: "{{ vault_agent_group }}"
+    mode: '0600'
+    remote_src: true
+  when:
+    - vault_agent_staging_stat.stat.isdir | default(false)
+    - (vault_agent_bootstrap_staging_dir + '/secret_id') is file
+  become: true
+  no_log: true
+
+- name: Remove bootstrap staging directory after credential claim
+  ansible.builtin.file:
+    path: "{{ vault_agent_bootstrap_staging_dir }}"
+    state: absent
+  when: vault_agent_staging_stat.stat.isdir | default(false)
+  become: true
