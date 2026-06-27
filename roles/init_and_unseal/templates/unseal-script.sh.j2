@@ -1,0 +1,91 @@
+#!/bin/bash
+# /opt/vault/unseal.sh
+# Vault auto-unseal script — called by systemd service on restart
+# P1-8: Includes retry logic to wait for Vault to be ready
+# P1-9: Checks seal status before and after unsealing
+
+set -e
+
+export VAULT_ADDR="{{ vault_api_endpoint }}"
+export VAULT_CACERT="{{ vault_cacert_path }}"
+
+UNSEAL_SCRIPT_LOG="/var/log/vault/unseal.log"
+UNSEAL_RETRY_ATTEMPTS="{{ vault_unseal_retry_max_attempts }}"
+UNSEAL_RETRY_WAIT="{{ vault_unseal_retry_wait_seconds }}"
+
+# Ensure log directory exists
+mkdir -p /var/log/vault
+chown vault:vault /var/log/vault
+
+{
+  echo "========== Vault Auto-Unseal Start $(date) =========="
+
+  # Step 1: Wait for Vault to be ready (P1-8 retry logic)
+  echo "Waiting for Vault API to be ready (timeout: ${UNSEAL_RETRY_ATTEMPTS} attempts, ${UNSEAL_RETRY_WAIT}s each)..."
+  ATTEMPT=0
+  while [ $ATTEMPT -lt $UNSEAL_RETRY_ATTEMPTS ]; do
+    if curl -sf --cacert "$VAULT_CACERT" "$VAULT_ADDR/v1/sys/health" > /dev/null 2>&1; then
+      echo "✓ Vault API is ready"
+      break
+    fi
+    ATTEMPT=$((ATTEMPT + 1))
+    echo "  Attempt $ATTEMPT/$UNSEAL_RETRY_ATTEMPTS: Vault not ready, waiting ${UNSEAL_RETRY_WAIT}s..."
+    sleep "$UNSEAL_RETRY_WAIT"
+  done
+
+  if [ $ATTEMPT -ge $UNSEAL_RETRY_ATTEMPTS ]; then
+    echo "✗ Vault API did not become ready after ${UNSEAL_RETRY_ATTEMPTS} attempts. Exiting."
+    echo "Troubleshoot: Check Vault container logs (docker logs vault)"
+    exit 1
+  fi
+
+  # Step 2: Read unseal keys from secure file
+  echo "Reading unseal keys from {{ vault_unseal_keys_path }}..."
+  if [ ! -f "{{ vault_unseal_keys_path }}" ]; then
+    echo "✗ Unseal keys not found at {{ vault_unseal_keys_path }}. Exiting."
+    exit 1
+  fi
+
+  KEYS=($(jq -r '.keys[]' {{ vault_unseal_keys_path }}))
+  if [ ${#KEYS[@]} -lt {{ vault_unseal_key_threshold }} ]; then
+    echo "✗ Not enough unseal keys (found ${#KEYS[@]}, need {{ vault_unseal_key_threshold }}). Exiting."
+    exit 1
+  fi
+
+  # Step 3: Check if already unsealed (idempotency)
+  SEAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r '.sealed // "unknown"' || echo "error")
+  if [ "$SEAL_STATUS" = "false" ]; then
+    echo "✓ Vault is already unsealed. Nothing to do."
+    echo "========== Vault Auto-Unseal Complete (already unsealed) $(date) =========="
+    exit 0
+  fi
+
+  # Step 4: Unseal Vault with first {{ vault_unseal_key_threshold }} keys
+  echo "Unsealing Vault with {{ vault_unseal_key_threshold }}-of-{{ vault_unseal_key_shares }} keys..."
+  for i in $(seq 0 $(({{ vault_unseal_key_threshold }} - 1))); do
+    echo "  Submitting key $((i+1))/{{ vault_unseal_key_threshold }}..."
+    vault operator unseal "${KEYS[$i]}" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+      echo "  ⚠ Warning: Unseal key $((i+1)) failed (may already be applied)"
+    else
+      echo "  ✓ Key $((i+1)) applied"
+    fi
+  done
+
+  # Step 5: Verify unseal status
+  echo "Verifying Vault seal status..."
+  sleep 1  # Wait for Vault to process unseal commands
+  FINAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r '.sealed // "unknown"' || echo "error")
+
+  if [ "$FINAL_STATUS" = "false" ]; then
+    echo "✓ Vault successfully unsealed"
+    echo "========== Vault Auto-Unseal Complete (success) $(date) =========="
+    exit 0
+  else
+    echo "✗ Vault is still sealed after unsealing. Status: $FINAL_STATUS"
+    echo "Troubleshoot: Check Vault logs, verify unseal keys are correct"
+    echo "========== Vault Auto-Unseal Complete (FAILURE) $(date) =========="
+    exit 1
+  fi
+
+} >> "$UNSEAL_SCRIPT_LOG" 2>&1

@@ -1,0 +1,23 @@
+[Unit]
+Description=Vault Seal Status Health Check
+Documentation=https://www.vaultproject.io/docs/
+After=vault.service
+BindsTo=vault.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/vault-healthcheck.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vault-healthcheck
+User=root
+Group=root
+ProtectSystem=full
+ProtectHome=yes
+NoNewPrivileges=yes
+
+# P1-9: If health check fails, log alert
+OnFailure=systemd-log-alert.service
+
+[Install]
+WantedBy=multi-user.target

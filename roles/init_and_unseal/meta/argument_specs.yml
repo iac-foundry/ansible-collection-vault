@@ -1,0 +1,90 @@
+---
+argument_specs:
+  main:
+    short_description: "Initialize Vault and configure auto-unseal systemd service."
+    description:
+      - Runs `vault operator init` to generate unseal keys and root token
+      - Stores unseal keys in /opt/vault/unseal-keys.json (0600 perms)
+      - Stores root token in /opt/vault/root-token.txt (0600 perms, ephemeral)
+      - Generates unseal script at /opt/vault/unseal.sh (0700 perms)
+      - Creates systemd service for auto-unseal on restart
+      - Implements idempotency — skips init if Vault already initialized
+      - Includes P1 mitigations for retry logic, health checks, backup verification
+    options:
+      vault_api_endpoint:
+        type: str
+        required: true
+        description: "Vault API URL (e.g., https://sec01.vernify.internal:8200)"
+      vault_cacert_path:
+        type: str
+        required: true
+        description: "Path to step-ca root certificate for TLS verification"
+      vault_unseal_keys_path:
+        type: str
+        default: "/opt/vault/unseal-keys.json"
+        description: "Path to store unseal keys (0600 perms, host-only readable)"
+      vault_root_token_path:
+        type: str
+        default: "/opt/vault/root-token.txt"
+        description: "Path to store root token (0600 perms, ephemeral, deleted after secret seeding)"
+      vault_unseal_script_path:
+        type: str
+        default: "/opt/vault/unseal.sh"
+        description: "Path to unseal script (0700 perms, called by systemd service)"
+      vault_unseal_service_name:
+        type: str
+        default: "vault-auto-unseal"
+        description: "systemd service name"
+      vault_unseal_service_path:
+        type: str
+        default: "/etc/systemd/system/vault-auto-unseal.service"
+        description: "Path to systemd service file"
+      vault_storage_check_path:
+        type: str
+        default: "/opt/vault/data/core/hsm"
+        description: "Path checked to detect if Vault already initialized"
+      vault_unseal_key_threshold:
+        type: int
+        default: 3
+        description: "Number of unseal keys required to unseal (in 3-of-5 Shamir config)"
+      vault_unseal_retry_wait_seconds:
+        type: int
+        default: 30
+        description: "Retry loop timeout for waiting for Vault to be ready (P1-8 mitigation)"
+      vault_unseal_retry_max_attempts:
+        type: int
+        default: 10
+        description: "Max retry attempts for Vault health check (P1-8 mitigation)"
+      vault_unseal_enable_health_timer:
+        type: bool
+        default: true
+        description: "Enable systemd timer for periodic seal status checks (P1-9 mitigation)"
+      vault_unseal_health_check_interval:
+        type: str
+        default: "60s"
+        description: "Interval for seal status health check (systemd timer format)"
+      vault_backup_verification_enabled:
+        type: bool
+        default: true
+        description: "Enable interactive backup verification prompt (P1-1 mitigation)"
+    return_values:
+      vault_root_token:
+        description: "Root token from Vault init (used by orchestration playbook for secret seeding)"
+        type: str
+        sample: "s.xxxxxxxxxxxxxxx"
+      vault_unseal_keys:
+        description: "Array of unseal keys from Vault init"
+        type: list
+        sample: ["key1base64...", "key2base64...", "key3base64...", "key4base64...", "key5base64..."]
+      vault_threshold:
+        description: "Number of unseal keys required (e.g., 3 for 3-of-5)"
+        type: int
+        sample: 3
+      vault_is_unsealed:
+        description: "Boolean indicating if Vault is currently unsealed"
+        type: bool
+        sample: true
+      vault_is_initialized:
+        description: "Boolean indicating if Vault was already initialized"
+        type: bool
+        sample: false

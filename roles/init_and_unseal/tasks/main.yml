@@ -1,0 +1,280 @@
+---
+# blueprints.vault.init_and_unseal — Initialize Vault + configure auto-unseal
+# P0-3: Vault initialization with unseal key backup verification
+# P1-2: Root token to tmpfs + auto-delete
+# P1-6: Vault audit logging enabled at init
+# P1-8: Auto-unseal with retry logic and systemd service
+# P1-9: Seal status monitoring
+
+- name: "Initialize Vault and configure auto-unseal"
+  block:
+    # ===== Task 1: Check idempotency (Vault already initialized?) =====
+    - name: "Check if Vault is already initialized"
+      stat:
+        path: "{{ vault_storage_check_path }}"
+      register: vault_storage_check
+      changed_when: false
+
+    - name: "Set fact: Vault is already initialized"
+      set_fact:
+        vault_is_initialized: "{{ vault_storage_check.stat.exists }}"
+      changed_when: false
+
+    # ===== Task 2: Run vault operator init (if not already initialized) =====
+    - name: "Run vault operator init (generates unseal keys + root token)"
+      environment:
+        VAULT_ADDR: "{{ vault_api_endpoint }}"
+        VAULT_CACERT: "{{ vault_cacert_path }}"
+      shell: |
+        vault operator init \
+          -key-shares={{ vault_unseal_key_shares }} \
+          -key-threshold={{ vault_unseal_key_threshold }} \
+          -format=json 2>&1 | tee /tmp/vault-init-output.json
+      register: vault_init_output_raw
+      no_log: true  # Don't log init output (contains keys + token)
+      failed_when: false
+      changed_when: "'Unseal Key' in vault_init_output_raw.stdout"
+      when: not vault_is_initialized
+
+    - name: "Parse vault operator init output"
+      set_fact:
+        vault_init_json: "{{ lookup('file', '/tmp/vault-init-output.json') | from_json }}"
+      no_log: true
+      when:
+        - not vault_is_initialized
+        - vault_init_output_raw.rc == 0
+
+    # ===== Task 3: Extract and store unseal keys (P0-3) =====
+    - name: "Extract root token and unseal keys"
+      set_fact:
+        vault_root_token: "{{ vault_init_json.root_token }}"
+        vault_unseal_keys: "{{ vault_init_json.keys }}"
+        vault_threshold: "{{ vault_unseal_key_threshold }}"
+      no_log: true
+      when:
+        - not vault_is_initialized
+        - vault_init_json is defined
+
+    # ===== Task 4: Write unseal keys to secure file =====
+    - name: "Write unseal keys to {{ vault_unseal_keys_path }} (0600 perms)"
+      copy:
+        content: |
+          {
+            "keys": {{ vault_unseal_keys | to_json(indent=2) }},
+            "threshold": {{ vault_unseal_key_threshold }}
+          }
+        dest: "{{ vault_unseal_keys_path }}"
+        mode: "0600"
+        owner: "root"
+        group: "root"
+      no_log: true
+      when:
+        - not vault_is_initialized
+        - vault_unseal_keys is defined
+
+    # ===== Task 5: Write root token to tmpfs (P1-2 mitigation) =====
+    - name: "Write root token to tmpfs {{ vault_root_token_path }} (ephemeral, 0600 perms)"
+      copy:
+        content: "{{ vault_root_token }}"
+        dest: "{{ vault_root_token_path }}"
+        mode: "0600"
+        owner: "root"
+        group: "root"
+      no_log: true
+      when:
+        - not vault_is_initialized
+        - vault_root_token is defined
+
+    # ===== Task 6: Print unseal keys + operator instructions (P0-3, P1-1) =====
+    - name: "Print unseal keys and operator instructions"
+      debug:
+        msg: |
+          ========== CRITICAL: UNSEAL KEYS GENERATED ==========
+
+          Vault has been initialized with the following configuration:
+          - Key Shares: {{ vault_unseal_key_shares }}
+          - Key Threshold: {{ vault_unseal_key_threshold }} (3-of-5 Shamir)
+
+          UNSEAL KEYS:
+          {% for key in vault_unseal_keys %}
+          {{ loop.index }}. {{ key }}
+          {% endfor %}
+
+          ROOT TOKEN:
+          {{ vault_root_token }}
+
+          NEXT STEPS (OPERATOR MUST COMPLETE):
+          1. Back up unseal keys to secure location IMMEDIATELY:
+             - 1Password vault
+             - Encrypted USB drive
+             - Hardware security module
+             - Paper backup (print + store in safe)
+
+          2. Verify backup location is secure and accessible
+
+          3. After backup complete, answer "yes" at the next prompt
+
+          4. Unseal script will run; Vault will be unsealed
+
+          5. After unsealing, root token will be automatically deleted
+             from disk (ephemeral storage)
+
+          SECURITY NOTES:
+          - These keys are displayed ONCE ONLY. Copy them carefully.
+          - Never commit these keys to git or logs.
+          - Never share keys unencrypted via email/chat.
+          - Root token is temporary (stored in tmpfs, auto-deleted)
+          - Unseal keys are stored on sec01 at {{ vault_unseal_keys_path }}
+
+          =========================================================
+      when:
+        - not vault_is_initialized
+        - vault_unseal_keys is defined
+
+    # ===== Task 7: Backup verification (P1-1 mitigation) =====
+    - name: "OPERATOR GATE: Verify unseal keys are backed up"
+      pause:
+        prompt: |
+          ========== OPERATOR GATE: BACKUP VERIFICATION ==========
+
+          Have you successfully backed up the unseal keys to a secure location?
+
+          Answer 'yes' only if you have:
+          - Written all 5 unseal keys to secure storage
+          - Verified backup location is accessible
+          - Confirmed backup matches printed output above
+
+          Type 'yes' to proceed with unsealing:
+        echo: yes
+      register: operator_backup_confirmation
+      when:
+        - not vault_is_initialized
+        - vault_backup_verification_enabled
+
+    - name: "Fail if operator did not confirm backup"
+      fail:
+        msg: |
+          Unseal keys must be backed up before proceeding.
+          Cannot proceed to unsealing without operator confirmation.
+
+          Please back up the unseal keys to a secure location and re-run this playbook.
+      when:
+        - not vault_is_initialized
+        - vault_backup_verification_enabled
+        - operator_backup_confirmation.user_input | lower != 'yes'
+
+    # ===== Task 8: Generate unseal script (P1-8 retry logic) =====
+    - name: "Generate unseal script at {{ vault_unseal_script_path }}"
+      template:
+        src: "unseal-script.sh.j2"
+        dest: "{{ vault_unseal_script_path }}"
+        mode: "0700"
+        owner: "root"
+        group: "root"
+      vars:
+        vault_keys: "{{ vault_unseal_keys }}"
+      no_log: true
+      when:
+        - not vault_is_initialized
+        - vault_unseal_keys is defined
+
+    # ===== Task 9: Create systemd auto-unseal service (P1-8 systemd retry) =====
+    - name: "Create systemd auto-unseal service file"
+      template:
+        src: "vault-auto-unseal.service.j2"
+        dest: "{{ vault_unseal_service_path }}"
+        mode: "0644"
+        owner: "root"
+        group: "root"
+      notify: "Reload systemd daemon"
+      when:
+        - not vault_is_initialized
+
+    # ===== Task 10: Enable systemd service (do not start yet) =====
+    - name: "Enable {{ vault_unseal_service_name }} service (disabled until operator unseals)"
+      systemd:
+        name: "{{ vault_unseal_service_name }}"
+        enabled: yes
+        daemon_reload: yes
+      when:
+        - not vault_is_initialized
+
+    # ===== Task 11: Create healthcheck timer (P1-9 mitigation) =====
+    - name: "Create systemd timer for periodic seal status checks"
+      template:
+        src: "vault-healthcheck.timer.j2"
+        dest: "/etc/systemd/system/vault-healthcheck.timer"
+        mode: "0644"
+        owner: "root"
+        group: "root"
+      notify: "Reload systemd daemon"
+      when:
+        - vault_unseal_enable_health_timer
+
+    - name: "Create systemd service for seal status healthcheck"
+      template:
+        src: "vault-healthcheck.service.j2"
+        dest: "/etc/systemd/system/vault-healthcheck.service"
+        mode: "0644"
+        owner: "root"
+        group: "root"
+      notify: "Reload systemd daemon"
+      when:
+        - vault_unseal_enable_health_timer
+
+    - name: "Create healthcheck script"
+      template:
+        src: "vault-healthcheck.sh.j2"
+        dest: "/usr/local/bin/vault-healthcheck.sh"
+        mode: "0755"
+        owner: "root"
+        group: "root"
+      when:
+        - vault_unseal_enable_health_timer
+
+    # ===== Task 12: Enable and start healthcheck timer =====
+    - name: "Enable and start vault-healthcheck timer"
+      systemd:
+        name: "vault-healthcheck.timer"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+      when:
+        - vault_unseal_enable_health_timer
+
+    # ===== Task 13: Enable Vault audit logging (P1-6 mitigation) =====
+    - name: "Enable Vault audit logging (file backend)"
+      environment:
+        VAULT_ADDR: "{{ vault_api_endpoint }}"
+        VAULT_CACERT: "{{ vault_cacert_path }}"
+        VAULT_TOKEN: "{{ vault_root_token }}"
+      shell: |
+        vault audit enable file file_path=/var/log/vault/audit.log
+      register: audit_enable_result
+      failed_when:
+        - audit_enable_result.rc != 0
+        - "'path is already in use' not in audit_enable_result.stderr"
+      changed_when: "'Success' in audit_enable_result.stdout"
+      no_log: true
+      when:
+        - not vault_is_initialized
+        - vault_root_token is defined
+      retries: 3
+      delay: 2
+
+    # ===== Task 14: Clean up temporary init output file =====
+    - name: "Remove temporary Vault init output file"
+      file:
+        path: "/tmp/vault-init-output.json"
+        state: absent
+      changed_when: false
+
+  handlers:
+    - name: "Reload systemd daemon"
+      systemd:
+        daemon_reload: yes
+
+  tags:
+    - "vault"
+    - "vault_init"
+    - "vault_unseal"

@@ -1,0 +1,68 @@
+---
+- name: Converge
+  hosts: vault_servers
+  gather_facts: true
+  tasks:
+    # Pre-requisites: Install Vault binary, start container
+    - name: "Install Vault CLI and step-ca root cert"
+      block:
+        - name: "Add HashiCorp apt repository"
+          shell: |
+            apt-get update
+            apt-get install -y curl gpg
+            curl https://apt.releases.hashicorp.com/gpg | gpg --dearmor > /usr/share/keyrings/hashicorp-archive-keyring.gpg
+            echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list
+            apt-get update && apt-get install -y vault jq
+          changed_when: false
+
+        - name: "Create Vault container (test environment)"
+          shell: |
+            docker run -d \
+              --name vault \
+              --net vault-test \
+              -e VAULT_DEV_ROOT_TOKEN_ID=test-root \
+              -p 8200:8200 \
+              vault:latest server -dev -dev-kv-v1 -dev-listen-address="0.0.0.0:8200"
+          changed_when: false
+          ignore_errors: true  # May already be running
+
+        - name: "Wait for Vault to be ready"
+          uri:
+            url: "{{ vault_api_endpoint }}/v1/sys/health"
+            method: GET
+            validate_certs: false
+            status_code: [200, 429, 473, 501, 503]
+          retries: 10
+          delay: 2
+          register: vault_health
+
+      become: true
+
+    # Test the role
+    - name: "Include init_and_unseal role"
+      include_role:
+        name: blueprints.vault.init_and_unseal
+      vars:
+        vault_api_endpoint: "https://sec01:8200"
+        vault_cacert_path: "/etc/ssl/certs/ca-certificates.crt"
+        vault_backup_verification_enabled: false  # Skip interactive prompt in tests
+      environment:
+        VAULT_SKIP_VERIFY: "true"
+
+    # Verify role outputs
+    - name: "Verify role outputs"
+      assert:
+        that:
+          - vault_root_token is defined
+          - vault_unseal_keys is defined
+          - vault_threshold is defined
+          - vault_is_initialized is defined
+        fail_msg: "Role did not produce expected outputs"
+
+    - name: "Display unseal keys (test environment only)"
+      debug:
+        msg: |
+          Vault Init Complete
+          Root Token: {{ vault_root_token }}
+          Unseal Keys: {{ vault_unseal_keys | length }} keys generated
+          Threshold: {{ vault_threshold }}-of-5

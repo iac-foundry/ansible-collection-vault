@@ -1,0 +1,35 @@
+#!/bin/bash
+# /usr/local/bin/vault-healthcheck.sh
+# Periodic seal status check (P1-9 mitigation)
+# Called by systemd timer every 60s; alerts if Vault is sealed
+
+export VAULT_ADDR="{{ vault_api_endpoint }}"
+export VAULT_CACERT="{{ vault_cacert_path }}"
+
+HEALTHCHECK_LOG="/var/log/vault/healthcheck.log"
+
+# Ensure log directory exists
+mkdir -p /var/log/vault
+chown vault:vault /var/log/vault
+
+{
+  TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+
+  # Query Vault health endpoint
+  HEALTH=$(curl -sf --cacert "$VAULT_CACERT" "$VAULT_ADDR/v1/sys/health" 2>/dev/null || echo "{}")
+  SEALED=$(echo "$HEALTH" | jq -r '.sealed // "unknown"' 2>/dev/null || echo "error")
+
+  if [ "$SEALED" = "error" ] || [ "$SEALED" = "unknown" ]; then
+    echo "[$TIMESTAMP] ⚠ WARNING: Cannot determine Vault seal status (API unreachable?)"
+    systemctl status vault
+    echo "[$TIMESTAMP] Consider restarting Vault: systemctl restart vault"
+  elif [ "$SEALED" = "true" ]; then
+    echo "[$TIMESTAMP] ✗ ALERT: Vault is SEALED (unexpected)"
+    echo "[$TIMESTAMP] Attempting to start auto-unseal service..."
+    systemctl start vault-auto-unseal.service
+    echo "[$TIMESTAMP] Auto-unseal service started; check logs at /var/log/vault/unseal.log"
+  else
+    echo "[$TIMESTAMP] ✓ Vault is unsealed (healthy)"
+  fi
+
+} >> "$HEALTHCHECK_LOG" 2>&1

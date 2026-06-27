@@ -1,0 +1,7 @@
+---
+# Handlers for blueprints.vault.init_and_unseal role
+
+- name: "Reload systemd daemon"
+  systemd:
+    daemon_reload: yes
+  listen: "Reload systemd daemon"

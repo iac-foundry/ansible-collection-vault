@@ -1,0 +1,12 @@
+[Unit]
+Description=Vault Seal Status Health Check Timer
+Documentation=https://www.vaultproject.io/docs/
+
+[Timer]
+# Run healthcheck every 60 seconds (default, can be overridden)
+OnBootSec={{ vault_unseal_health_check_interval }}
+OnUnitActiveSec={{ vault_unseal_health_check_interval }}
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

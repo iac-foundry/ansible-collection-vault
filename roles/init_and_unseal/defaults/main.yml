@@ -1,0 +1,31 @@
+---
+# blueprints.vault.init_and_unseal role defaults
+# All values can be overridden by caller
+
+# Paths
+vault_unseal_keys_path: "/opt/vault/unseal-keys.json"
+vault_root_token_path: "/opt/vault/root-token.txt"
+vault_unseal_script_path: "/opt/vault/unseal.sh"
+vault_unseal_service_path: "/etc/systemd/system/vault-auto-unseal.service"
+vault_storage_check_path: "/opt/vault/data/core/hsm"
+
+# systemd service name
+vault_unseal_service_name: "vault-auto-unseal"
+
+# Unseal configuration (3-of-5 Shamir scheme)
+vault_unseal_key_threshold: 3
+vault_unseal_key_shares: 5
+
+# Health check and retry logic (P1-8 mitigation)
+vault_unseal_retry_wait_seconds: 30
+vault_unseal_retry_max_attempts: 10
+
+# Seal status monitoring (P1-9 mitigation)
+vault_unseal_enable_health_timer: true
+vault_unseal_health_check_interval: "60s"
+
+# Backup verification (P1-1 mitigation)
+vault_backup_verification_enabled: true
+
+# API request settings
+vault_api_timeout: 10

@@ -1,0 +1,31 @@
+[Unit]
+Description=Vault Auto-Unseal Service
+Documentation=https://www.vaultproject.io/docs/
+Requires=vault.service
+After=network-online.target vault.service
+ConditionPathExists={{ vault_unseal_script_path }}
+OnFailure=systemd-log-alert.service
+
+[Service]
+Type=oneshot
+ExecStart={{ vault_unseal_script_path }}
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=vault-auto-unseal
+User=root
+Group=root
+ProtectSystem=full
+ProtectHome=yes
+NoNewPrivileges=yes
+
+# P1-8: Retry logic in systemd (in addition to script retry loop)
+# Systemd will retry this service if it fails
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=120
+StartLimitBurst=3
+
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

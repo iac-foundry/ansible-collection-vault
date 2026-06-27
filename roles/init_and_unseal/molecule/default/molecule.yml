@@ -1,0 +1,39 @@
+---
+dependency:
+  name: galaxy
+
+driver:
+  name: docker
+
+platforms:
+  - name: sec01
+    image: geerlingguy/docker-ubuntu2204-ansible:latest
+    pre_build_image: true
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:ro
+    privileged: true
+    command: /lib/systemd/systemd-cgroup-generator.py && /lib/systemd/systemd --log-target=journal
+    networks:
+      - name: vault-test
+    port_bindings:
+      - 8200:8200/tcp
+
+provisioner:
+  name: ansible
+  options:
+    extra-vars:
+      ansible_python_interpreter: /usr/bin/python3
+  inventory:
+    hosts:
+      all:
+        children:
+          vault_servers:
+            hosts:
+              sec01:
+                ansible_connection: docker
+                ansible_host: sec01
+                vault_api_endpoint: "https://sec01:8200"
+                vault_cacert_path: "/etc/ssl/certs/ca-certificates.crt"
+
+verifier:
+  name: ansible
