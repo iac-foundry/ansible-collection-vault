@@ -38,7 +38,7 @@ jobs:
       # Channel B — publish to a Galaxy / Automation Hub instance (optional).
       # Enable by setting the GALAXY_SERVER and GALAXY_TOKEN repo secrets.
       - name: Publish to Galaxy / Automation Hub
-        if: ${{ secrets.GALAXY_TOKEN != '' }}
+        if: ${{ env.GALAXY_TOKEN != '' }}
         env:
           GALAXY_TOKEN: ${{ secrets.GALAXY_TOKEN }}
           GALAXY_SERVER: ${{ secrets.GALAXY_SERVER }}

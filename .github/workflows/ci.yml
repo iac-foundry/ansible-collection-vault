@@ -7,7 +7,6 @@ name: blueprints-ci
 
 "on":
   push:
-    branches: [main]
   pull_request:
 
 jobs:
