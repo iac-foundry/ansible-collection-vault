@@ -1,30 +1,135 @@
 ---
+# container_server: Deploy Vault container with TLS listener and file storage backend.
+#
+# Responsibilities (per design):
+#   1. Assert vault_server_image is supplied (no org default)
+#   2. Assert TLS cert + key are supplied by caller (fail-fast if missing)
+#   3. Create vault user/group and data directory with restrictive perms
+#   4. Write TLS cert and key to secure paths
+#   5. Render config.hcl from template with storage + listener blocks
+#   6. Start/restart Vault container via community.docker.docker_container
+#   7. Expose listener addresses as facts for platform-layer consumers
+#   8. Do NOT init or unseal Vault (that's init_and_unseal's responsibility)
+#
+# Constraints:
+#   - Idempotence-first: use community.docker.docker_container in declarative mode
+#   - No_log on any task handling TLS keys or admin secrets
+#   - Fail-fast asserts on required inputs before any container starts
+#   - No include_role / import_role of other blueprints.* collections
+#   - All configuration from caller-supplied variables; no external retrieval
+#   - Storage backend: file-based (no external dependencies like PostgreSQL)
+#   - TLS required (per design Decision 5, mandate TLS even for dev)
+
 - name: Assert required inputs are supplied by the caller
   ansible.builtin.assert:
     that:
       - vault_server_image | length > 0
-    fail_msg: "vault_server_image must be supplied by the caller (no org-specific default)."
-    success_msg: "Required inputs present."
+      - vault_server_tls_cert | length > 0
+      - vault_server_tls_key | length > 0
+    fail_msg: |
+      Required inputs missing:
+        - vault_server_image: Container image reference (caller-supplied; no org default). Example: 'hashicorp/vault:1.15.0'
+        - vault_server_tls_cert: TLS certificate (PEM-encoded, from step-ca or caller-supplied)
+        - vault_server_tls_key: TLS private key (PEM-encoded, from step-ca or caller-supplied)
+    success_msg: "Required inputs present (image + TLS cert + TLS key)."
+  no_log: false
   tags:
     - container_server
 
-- name: Determine whether TLS material was supplied
-  ansible.builtin.set_fact:
-    vault_server_tls_enabled: "{{ (vault_server_tls_cert | length > 0) and (vault_server_tls_key | length > 0) }}"
+- name: Create vault user and group
+  ansible.builtin.user:
+    name: vault
+    group: vault
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    state: present
   tags:
     - container_server
 
-- name: Record caller-supplied secret presence (the secret is an input, never retrieved here)
-  ansible.builtin.set_fact:
-    vault_server_admin_secret_present: "{{ vault_server_admin_secret | length > 0 }}"
+- name: Create vault data directory with restrictive permissions
+  ansible.builtin.file:
+    path: "{{ vault_server_data_dir }}"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0700"
+  tags:
+    - container_server
+
+- name: Create vault config directory
+  ansible.builtin.file:
+    path: "{{ vault_server_data_dir }}/config"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0700"
+  tags:
+    - container_server
+
+- name: Write TLS certificate to secure location
+  ansible.builtin.copy:
+    content: "{{ vault_server_tls_cert }}"
+    dest: "{{ vault_server_data_dir }}/config/tls.crt"
+    owner: vault
+    group: vault
+    mode: "0600"
+  tags:
+    - container_server
+
+- name: Write TLS private key to secure location
+  ansible.builtin.copy:
+    content: "{{ vault_server_tls_key }}"
+    dest: "{{ vault_server_data_dir }}/config/tls.key"
+    owner: vault
+    group: vault
+    mode: "0600"
   no_log: true
   tags:
     - container_server
 
-- name: Scaffold convergence placeholder
+- name: Render config.hcl from template
+  ansible.builtin.template:
+    src: config.hcl.j2
+    dest: "{{ vault_server_data_dir }}/config/config.hcl"
+    owner: vault
+    group: vault
+    mode: "0600"
+  tags:
+    - container_server
+
+- name: Start/restart Vault container
+  community.docker.docker_container:
+    name: vault
+    image: "{{ vault_server_image }}"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "{{ vault_server_https_port }}:8200"
+    volumes:
+      - "{{ vault_server_data_dir }}/config:/vault/config:ro"
+      - "{{ vault_server_data_dir }}/file:/vault/file"
+    env:
+      VAULT_ADDR: "https://0.0.0.0:8200"
+      VAULT_CONFIG_DIR: "/vault/config"
+    command: "server -config=/vault/config/config.hcl"
+  tags:
+    - container_server
+
+- name: Expose HTTPS listener address as fact
+  ansible.builtin.set_fact:
+    vault_server_https_address: "https://localhost:{{ vault_server_https_port }}"
+  tags:
+    - container_server
+
+- name: Container server convergence complete
   ansible.builtin.debug:
-    msg: >-
-      Scaffold for container_server: implement vault using the common server interface.
-      TLS enabled={{ vault_server_tls_enabled }}.
+    msg: |
+      container_server role complete.
+      Vault container running with TLS listener and file storage backend.
+        - HTTPS listener: {{ vault_server_https_address }}
+        - Data directory: {{ vault_server_data_dir }}
+        - TLS certificates loaded from config directory
+        - Awaiting init_and_unseal role for vault operator init
   tags:
     - container_server
