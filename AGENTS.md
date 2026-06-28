@@ -72,3 +72,27 @@ All standards are in `docs/` of the iac-foundry monorepo. Start with `docs/AGENT
 - [ ] molecule `default` scenario converges idempotently
 - [ ] ansible-lint (production profile) passes
 - [ ] README states inputs, deployment model, and explicit non-goals
+
+---
+
+## Blast radius: contained changes only (global changes need a human risk call)
+
+**Critically important here: this repo produces shared collections that other teams and
+customers consume.** A global-impact pattern baked into a shared component does not affect
+one host — it propagates to *every consumer that pins the release*. Contained-by-design is
+therefore a core quality bar for everything shipped from here, not just a deployment-time
+concern.
+
+- Prefer the **smallest blast radius**: a role or change should affect one service, file,
+  unit, or user — never "every process" or "all hosts" by default. Make any wide-reaching
+  option explicitly opt-in, never a default a consumer inherits silently.
+- Treat as high-risk anything global: `ld.so.preload`/`LD_PRELOAD`, system-wide
+  PAM/NSS/`profile.d`, global `sudoers` or firewall defaults, kernel modules, `sysctl`,
+  systemd defaults — anything inherited fleet-wide or by every user once a consumer applies
+  the collection.
+- **If a capability cannot be delivered in a contained way, STOP and surface it to the
+  human** — state what it touches, the blast radius across consumers if it goes wrong, and
+  the rollback path, and let them decide. Do not ship a global-impact default on your own
+  judgement.
+
+See the global working agreement (`~/.claude/CLAUDE.md`) for the full rule.
