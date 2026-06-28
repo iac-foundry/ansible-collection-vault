@@ -36,9 +36,19 @@
   tags:
     - container_server
 
+- name: Create vault group
+  ansible.builtin.group:
+    name: vault
+    gid: "{{ vault_server_gid }}"
+    system: true
+    state: present
+  tags:
+    - container_server
+
 - name: Create vault user and group
   ansible.builtin.user:
     name: vault
+    uid: "{{ vault_server_uid }}"
     group: vault
     system: true
     shell: /usr/sbin/nologin
@@ -104,6 +114,13 @@
     image: "{{ vault_server_image }}"
     state: started
     restart_policy: unless-stopped
+    user: "{{ vault_server_uid }}:{{ vault_server_gid }}"
+    cap_drop:
+      - ALL
+    capabilities:
+      # IPC_LOCK is required because config.hcl does not set disable_mlock;
+      # Vault calls mlock() to prevent secrets from being swapped to disk.
+      - IPC_LOCK
     ports:
       - "{{ vault_server_https_port }}:8200"
     volumes:
