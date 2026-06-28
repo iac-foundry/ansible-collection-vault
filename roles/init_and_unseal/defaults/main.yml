@@ -28,4 +28,6 @@ vault_unseal_health_check_interval: "60s"
 vault_backup_verification_enabled: true
 
 # API request settings
+vault_api_endpoint: "https://localhost:8200"
+vault_cacert_path: "/etc/ssl/certs/ca-certificates.crt"
 vault_api_timeout: 10
