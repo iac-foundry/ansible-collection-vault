@@ -24,7 +24,15 @@ chown vault:vault /var/log/vault
   echo "Waiting for Vault API to be ready (timeout: ${UNSEAL_RETRY_ATTEMPTS} attempts, ${UNSEAL_RETRY_WAIT}s each)..."
   ATTEMPT=0
   while [ $ATTEMPT -lt $UNSEAL_RETRY_ATTEMPTS ]; do
-    if curl -sf --cacert "$VAULT_CACERT" "$VAULT_ADDR/v1/sys/health" > /dev/null 2>&1; then
+    # No -f here: Vault's /v1/sys/health intentionally returns non-2xx
+    # status codes (503 sealed, 429/472/473 standby/DR states, 501 not
+    # initialized) for states this script is specifically waiting to act
+    # on. curl -f treats any non-2xx as failure, so a sealed-but-healthy
+    # Vault (exactly the state we want to unseal) could never be detected
+    # as "ready" -- this loop would exhaust all retries against a perfectly
+    # responsive Vault. Without -f, curl exits 0 as long as it received any
+    # HTTP response at all; only a real connection failure is non-zero.
+    if curl -s --cacert "$VAULT_CACERT" "$VAULT_ADDR/v1/sys/health" > /dev/null 2>&1; then
       echo "✓ Vault API is ready"
       break
     fi

@@ -15,8 +15,13 @@ chown vault:vault /var/log/vault
 {
   TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
 
-  # Query Vault health endpoint
-  HEALTH=$(curl -sf --cacert "$VAULT_CACERT" "$VAULT_ADDR/v1/sys/health" 2>/dev/null || echo "{}")
+  # Query Vault health endpoint. No -f: Vault intentionally returns
+  # non-2xx (503 sealed, 429/472/473 standby/DR, 501 not initialized) for
+  # states this check needs to distinguish via the JSON body itself --
+  # curl -f discards the body on any non-2xx, which made SEALED always
+  # resolve to "unknown" while sealed, the one state this check exists to
+  # detect and act on (it never reached the auto-unseal trigger below).
+  HEALTH=$(curl -s --cacert "$VAULT_CACERT" "$VAULT_ADDR/v1/sys/health" 2>/dev/null || echo "{}")
   SEALED=$(echo "$HEALTH" | jq -r '.sealed // "unknown"' 2>/dev/null || echo "error")
 
   if [ "$SEALED" = "error" ] || [ "$SEALED" = "unknown" ]; then
