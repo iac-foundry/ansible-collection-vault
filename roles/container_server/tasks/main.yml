@@ -98,6 +98,20 @@
   tags:
     - container_server
 
+- name: Create vault audit log directory (bind-mounted to /var/log/vault;
+    init_and_unseal's audit-enable step otherwise fails with a mkdir
+    permission error, since the container runs as a non-root uid with
+    every capability dropped and nothing else creates this path or mounts
+    it with matching ownership)
+  ansible.builtin.file:
+    path: "{{ vault_server_data_dir }}/logs"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0700"
+  tags:
+    - container_server
+
 - name: Write TLS certificate to secure location
   ansible.builtin.copy:
     content: "{{ vault_server_tls_cert }}"
@@ -154,6 +168,7 @@
     volumes:
       - "{{ vault_server_data_dir }}/config:/vault/config:ro"
       - "{{ vault_server_data_dir }}/file:/vault/file"
+      - "{{ vault_server_data_dir }}/logs:/var/log/vault"
     env:
       VAULT_ADDR: "https://0.0.0.0:8200"
       VAULT_CONFIG_DIR: "/vault/config"
