@@ -169,7 +169,15 @@
       # the entrypoint's own setcap call.
       SKIP_CHOWN: "true"
       SKIP_SETCAP: "true"
-    command: "server -config=/vault/config/config.hcl"
+    # Just "server" -- the official entrypoint already shifts "server" off
+    # and reconstructs the full vault invocation itself, including
+    # -config="$VAULT_CONFIG_DIR" (set above). Passing our own redundant
+    # -config=/vault/config/config.hcl here resulted in TWO -config flags
+    # on the same command line and a same-process double-bind: "Error
+    # initializing listener of type tcp: listen tcp4 0.0.0.0:8200: bind:
+    # address already in use" -- confirmed by reproducing the exact
+    # invocation manually both with and without the redundant flag.
+    command: "server"
   tags:
     - container_server
 
