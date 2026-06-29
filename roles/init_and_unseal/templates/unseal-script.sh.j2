@@ -89,15 +89,17 @@ chown vault:vault /var/log/vault
 
   # Step 5: Verify unseal status
   echo "Verifying Vault seal status..."
-  # A single 1s sleep + one check was not reliably enough: live testing
-  # found Vault correctly unsealed moments later (confirmed via a direct
-  # `vault status` call right after this script reported failure) even
-  # though this exact check reported "unknown" -- a transient race right
-  # after the last unseal call, not a real failure. Retry briefly instead
-  # of trusting a single sample.
+  # Even 5 retries at 1s apart (5s total) was not reliably enough in live
+  # testing -- Vault correctly unsealed moments later (confirmed via a
+  # direct `vault status` call right after this script still reported
+  # failure) but this check kept seeing "unknown" for several seconds
+  # past the last unseal call, consistent with Vault's own internal
+  # startup sequence (mount loading etc.) after the final key transitions
+  # it from sealed to active. Give this the same order of magnitude as
+  # the "wait for ready" loop above rather than a brief few-second window.
   FINAL_STATUS="unknown"
-  for _ in 1 2 3 4 5; do
-    sleep 1
+  for _ in $(seq 1 15); do
+    sleep 2
     FINAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r '.sealed // "unknown"' || echo "error")
     [ "$FINAL_STATUS" = "false" ] && break
   done
