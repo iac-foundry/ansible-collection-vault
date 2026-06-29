@@ -9,5 +9,11 @@ vault_server_data_dir: "/var/lib/vault"
 vault_server_tls_cert: ""           # when set (with key), TLS is enabled automatically
 vault_server_tls_key: ""
 vault_server_admin_secret: ""       # caller-supplied secret; never retrieved by this role
-vault_server_uid: 999               # fixed UID for the host-side vault user; passed to docker_container's user: param (LADR-009)
-vault_server_gid: 999               # fixed GID for the host-side vault group; passed to docker_container's user: param (LADR-009)
+# uid/gid are left unset (null) by default: the OS picks the next free
+# system id (system: true), which tasks/main.yml then captures and uses for
+# docker_container's user: param (LADR-009). A fixed numeric default (999)
+# is not safe -- it collides with whatever the base image already assigned
+# to standard system groups (e.g. systemd-journal on Ubuntu). Set these
+# explicitly only if you need a specific, pre-reserved id.
+vault_server_uid: null
+vault_server_gid: null
