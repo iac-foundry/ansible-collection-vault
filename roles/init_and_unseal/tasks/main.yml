@@ -269,11 +269,6 @@
         state: absent
       changed_when: false
 
-  handlers:
-    - name: "Reload systemd daemon"
-      systemd:
-        daemon_reload: yes
-
   tags:
     - "vault"
     - "vault_init"
