@@ -1,19 +1,25 @@
 ---
-namespace: blueprints
-name: vault
-role_name: init_and_unseal
-version: "0.1.0"
-repository: "https://github.com/iac-foundry/ansible-collection-vault"
-documentation: "https://github.com/iac-foundry/ansible-collection-vault#init-and-unseal-role"
-license:
-  - Apache-2.0
-authors:
-  - "Foundry Platform"
-description: "Initialize Vault operator init, generate unseal keys, create auto-unseal systemd service"
-tags:
-  - "vault"
-  - "init"
-  - "unseal"
-  - "secrets"
-  - "pki"
-  - "blueprints"
+galaxy_info:
+  role_name: init_and_unseal
+  author: Platform Engineering
+  description: "Initialize Vault operator init, generate unseal keys, create auto-unseal systemd service."
+  license: MIT
+  min_ansible_version: "2.16"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Debian
+      versions:
+        - bookworm
+    - name: EL
+      versions:
+        - "9"
+  galaxy_tags:
+    - blueprints
+    - vault
+    - init
+    - unseal
+    - secrets
+dependencies: []
