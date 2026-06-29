@@ -9,15 +9,24 @@
 - name: "Initialize Vault and configure auto-unseal"
   block:
     # ===== Task 1: Check idempotency (Vault already initialized?) =====
+    # A filesystem-path stat check was used previously (a path under
+    # /opt/vault/data/core/hsm that never matched this role's actual file
+    # storage location) -- it always reported "not initialized" regardless
+    # of real state, which would have retried `vault operator init` against
+    # an already-initialized Vault on any re-run. Querying /v1/sys/health
+    # directly is correct regardless of storage backend internals.
     - name: "Check if Vault is already initialized"
-      stat:
-        path: "{{ vault_storage_check_path }}"
-      register: vault_storage_check
+      uri:
+        url: "{{ vault_api_endpoint }}/v1/sys/health"
+        method: GET
+        ca_path: "{{ vault_cacert_path }}"
+        status_code: [200, 429, 472, 473, 501, 503]
+      register: vault_health_check
       changed_when: false
 
     - name: "Set fact: Vault is already initialized"
       set_fact:
-        vault_is_initialized: "{{ vault_storage_check.stat.exists }}"
+        vault_is_initialized: "{{ vault_health_check.json.initialized | default(false) }}"
       changed_when: false
 
     # ===== Task 2: Run vault operator init (if not already initialized) =====
@@ -29,16 +38,26 @@
         vault operator init \
           -key-shares={{ vault_unseal_key_shares }} \
           -key-threshold={{ vault_unseal_key_threshold }} \
-          -format=json 2>&1 | tee /tmp/vault-init-output.json
+          -format=json 2>&1 | tee {{ vault_init_output_path }}
       register: vault_init_output_raw
       no_log: true  # Don't log init output (contains keys + token)
       failed_when: false
       changed_when: "'Unseal Key' in vault_init_output_raw.stdout"
       when: not vault_is_initialized
 
+    - name: "Restrict permissions on raw init output (contains keys + root token)"
+      file:
+        path: "{{ vault_init_output_path }}"
+        mode: "0600"
+        owner: "root"
+        group: "root"
+      when:
+        - not vault_is_initialized
+        - vault_init_output_raw.rc == 0
+
     - name: "Read vault operator init output file"
       slurp:
-        src: "/tmp/vault-init-output.json"
+        src: "{{ vault_init_output_path }}"
       register: vault_init_output_slurp
       no_log: true
       when:
@@ -61,7 +80,17 @@
     - name: "Extract root token and unseal keys"
       set_fact:
         vault_root_token: "{{ vault_init_json.root_token }}"
-        vault_unseal_keys: "{{ vault_init_json.keys }}"
+        # NOT vault_init_json.keys: that field does not exist in this
+        # Vault version's init JSON output at all (real fields are
+        # unseal_keys_hex / unseal_keys_b64) -- confirmed by inspecting the
+        # actual init output structure live. It was ALSO a latent Jinja2
+        # trap even if the field existed: dict.keys is a native Python
+        # method, so dot-notation attribute lookup (vault_init_json.keys)
+        # resolves to that bound method (rendering as
+        # "<built-in method keys of dict object at 0x...>") before Jinja2
+        # ever falls back to item lookup. unseal_keys_hex has no such
+        # collision. vault operator unseal expects hex-encoded keys.
+        vault_unseal_keys: "{{ vault_init_json.unseal_keys_hex }}"
         vault_threshold: "{{ vault_unseal_key_threshold }}"
       no_log: true
       when:
@@ -138,6 +167,8 @@
           - Never share keys unencrypted via email/chat.
           - Root token is temporary (stored in tmpfs, auto-deleted)
           - Unseal keys are stored on sec01 at {{ vault_unseal_keys_path }}
+          - Raw init output (same keys + root token) also at {{ vault_init_output_path }}
+            until vault_cleanup_sensitive_files_enabled is explicitly set true
 
           =========================================================
       when:
@@ -275,12 +306,20 @@
       retries: 3
       delay: 2
 
-    # ===== Task 14: Clean up temporary init output file =====
-    - name: "Remove temporary Vault init output file"
+    # ===== Task 14: Clean up sensitive on-disk files (opt-in only) =====
+    # Never automatic: deleting the only on-disk copies of the unseal keys
+    # before the operator has genuinely backed them up elsewhere would be
+    # an unrecoverable data-loss bug, not a convenience. The operator gate
+    # above (Task 7) only confirms a human typed "yes" -- it does not by
+    # itself prove a real backup exists. Set
+    # vault_cleanup_sensitive_files_enabled: true explicitly (e.g. via
+    # extra-vars on a follow-up run) once backup is independently verified.
+    - name: "Remove raw init output file (contains keys + root token in the clear)"
       file:
-        path: "/tmp/vault-init-output.json"
+        path: "{{ vault_init_output_path }}"
         state: absent
       changed_when: false
+      when: vault_cleanup_sensitive_files_enabled
 
   tags:
     - "vault"

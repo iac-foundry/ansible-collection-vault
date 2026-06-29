@@ -39,10 +39,14 @@ argument_specs:
         type: str
         default: "/etc/systemd/system/vault-auto-unseal.service"
         description: "Path to systemd service file"
-      vault_storage_check_path:
+      vault_init_output_path:
         type: str
-        default: "/opt/vault/data/core/hsm"
-        description: "Path checked to detect if Vault already initialized"
+        default: "/opt/vault/init-output.json"
+        description: "Path to raw `vault operator init -format=json` output (0600 perms, sensitive)"
+      vault_cleanup_sensitive_files_enabled:
+        type: bool
+        default: false
+        description: "Opt-in: delete init-output.json and unseal-keys.json once the operator confirms secure backup is complete. Never automatic."
       vault_unseal_key_threshold:
         type: int
         default: 3
@@ -73,9 +77,9 @@ argument_specs:
         type: str
         sample: "s.xxxxxxxxxxxxxxx"
       vault_unseal_keys:
-        description: "Array of unseal keys from Vault init"
+        description: "Array of unseal keys from Vault init (hex-encoded, from unseal_keys_hex -- matches what `vault operator unseal` expects)"
         type: list
-        sample: ["key1base64...", "key2base64...", "key3base64...", "key4base64...", "key5base64..."]
+        sample: ["a1b2c3...", "d4e5f6...", "a7b8c9...", "d0e1f2...", "a3b4c5..."]
       vault_threshold:
         description: "Number of unseal keys required (e.g., 3 for 3-of-5)"
         type: int

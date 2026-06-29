@@ -7,7 +7,17 @@ vault_unseal_keys_path: "/opt/vault/unseal-keys.json"
 vault_root_token_path: "/opt/vault/root-token.txt"
 vault_unseal_script_path: "/opt/vault/unseal.sh"
 vault_unseal_service_path: "/etc/systemd/system/vault-auto-unseal.service"
-vault_storage_check_path: "/opt/vault/data/core/hsm"
+# Raw `vault operator init -format=json` output. /opt/vault (not /tmp) so it
+# survives next to the other sensitive Vault files this role already keeps
+# there, with the same 0600/root ownership -- not subject to /tmp cleanup
+# timers or shared-tmp readability.
+vault_init_output_path: "/opt/vault/init-output.json"
+
+# Cleanup of sensitive on-disk files (init-output.json, unseal-keys.json) is
+# opt-in, never automatic: the operator must explicitly confirm secure
+# backup is complete before this role deletes the only on-disk copies.
+# Defaults to false; set true to enable the cleanup task below.
+vault_cleanup_sensitive_files_enabled: false
 
 # systemd service name
 vault_unseal_service_name: "vault-auto-unseal"
