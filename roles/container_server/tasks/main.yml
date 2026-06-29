@@ -142,6 +142,13 @@
       # IPC_LOCK is required because config.hcl does not set disable_mlock;
       # Vault calls mlock() to prevent secrets from being swapped to disk.
       - IPC_LOCK
+    ulimits:
+      # The IPC_LOCK capability alone is not sufficient: Docker also
+      # enforces a separate memlock ulimit independent of capabilities,
+      # and its default is too low for Vault's mlock() call to succeed
+      # ("Failed to lock memory: cannot allocate memory"). Set unlimited,
+      # matching HashiCorp's own documented Docker deployment guidance.
+      - "memlock:-1:-1"
     ports:
       - "{{ vault_server_https_port }}:8200"
     volumes:
