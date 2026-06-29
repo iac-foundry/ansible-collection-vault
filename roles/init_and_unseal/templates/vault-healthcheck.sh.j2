@@ -22,7 +22,14 @@ chown vault:vault /var/log/vault
   # resolve to "unknown" while sealed, the one state this check exists to
   # detect and act on (it never reached the auto-unseal trigger below).
   HEALTH=$(curl -s --cacert "$VAULT_CACERT" "$VAULT_ADDR/v1/sys/health" 2>/dev/null || echo "{}")
-  SEALED=$(echo "$HEALTH" | jq -r '.sealed // "unknown"' 2>/dev/null || echo "error")
+  # NOT '.sealed // "unknown"': jq's // treats false the same as
+  # null/missing, so every time Vault was genuinely healthy and unsealed
+  # (sealed: false) this discarded that value and reported "unknown"
+  # instead -- a false "cannot determine seal status" alert on the one
+  # state that needed no action at all. Sealed:true was never affected
+  # (true is not falsy to //), so the auto-unseal trigger branch below was
+  # never broken by this -- only the healthy-case logging was wrong.
+  SEALED=$(echo "$HEALTH" | jq -r 'if .sealed == null then "unknown" else .sealed end' 2>/dev/null || echo "error")
 
   if [ "$SEALED" = "error" ] || [ "$SEALED" = "unknown" ]; then
     echo "[$TIMESTAMP] ⚠ WARNING: Cannot determine Vault seal status (API unreachable?)"

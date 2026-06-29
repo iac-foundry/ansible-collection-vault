@@ -68,7 +68,13 @@ chown vault:vault /var/log/vault
   fi
 
   # Step 3: Check if already unsealed (idempotency)
-  SEAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r '.sealed // "unknown"' || echo "error")
+  # NOT '.sealed // "unknown"': jq's // operator treats false the same as
+  # null/missing, so whenever Vault is genuinely unsealed (sealed: false,
+  # the exact value this check exists to detect) it discarded the real
+  # value and substituted "unknown" -- a deterministic bug, not a timing
+  # issue, confirmed by dumping the raw JSON ("sealed": false present every
+  # time) right next to this expression evaluating to "unknown" every time.
+  SEAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r 'if .sealed == null then "unknown" else .sealed end' || echo "error")
   if [ "$SEAL_STATUS" = "false" ]; then
     echo "✓ Vault is already unsealed. Nothing to do."
     echo "========== Vault Auto-Unseal Complete (already unsealed) $(date) =========="
@@ -89,19 +95,18 @@ chown vault:vault /var/log/vault
 
   # Step 5: Verify unseal status
   echo "Verifying Vault seal status..."
-  # Even 5 retries at 1s apart (5s total) was not reliably enough in live
-  # testing -- Vault correctly unsealed moments later (confirmed via a
-  # direct `vault status` call right after this script still reported
-  # failure) but this check kept seeing "unknown" for several seconds
-  # past the last unseal call, consistent with Vault's own internal
-  # startup sequence (mount loading etc.) after the final key transitions
-  # it from sealed to active. Give this the same order of magnitude as
-  # the "wait for ready" loop above rather than a brief few-second window.
+  sleep 1  # Wait for Vault to process unseal commands
+  # NOT '.sealed // "unknown"': see the identical note on SEAL_STATUS above
+  # -- this was the actual, deterministic cause of every "still sealed"
+  # false-negative seen in testing (including with a much wider retry
+  # window, which never helped since the bug was not timing-related). A
+  # small retry remains here only as genuine defense against real
+  # transient network blips, not as a workaround for the jq bug.
   FINAL_STATUS="unknown"
-  for _ in $(seq 1 15); do
-    sleep 2
-    FINAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r '.sealed // "unknown"' || echo "error")
+  for _ in 1 2 3; do
+    FINAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r 'if .sealed == null then "unknown" else .sealed end' || echo "error")
     [ "$FINAL_STATUS" = "false" ] && break
+    sleep 2
   done
 
   if [ "$FINAL_STATUS" = "false" ]; then
