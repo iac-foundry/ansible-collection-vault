@@ -10,10 +10,10 @@ listener "tcp" {
   tls_key_file  = "/vault/config/tls.key"
 
   tls_min_version      = "tls12"
-  tls_cipher_suites    = [
-    "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-    "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
-  ]
+  # Vault's tls_cipher_suites is a single comma-separated string, not an
+  # HCL list -- a list literal here fails to parse with "unknown type for
+  # string *ast.ListType".
+  tls_cipher_suites    = "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"
 }
 
 api_addr     = "https://0.0.0.0:8200"
