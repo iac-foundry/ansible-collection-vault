@@ -36,9 +36,22 @@
       changed_when: "'Unseal Key' in vault_init_output_raw.stdout"
       when: not vault_is_initialized
 
+    - name: "Read vault operator init output file"
+      slurp:
+        src: "/tmp/vault-init-output.json"
+      register: vault_init_output_slurp
+      no_log: true
+      when:
+        - not vault_is_initialized
+        - vault_init_output_raw.rc == 0
+
     - name: "Parse vault operator init output"
       set_fact:
-        vault_init_json: "{{ lookup('file', '/tmp/vault-init-output.json') | from_json }}"
+        # lookup('file', ...) always reads from the control node, never the
+        # delegated remote host -- this file is written on sec01 (the
+        # previous task's tee, delegated there), so lookup() could never
+        # find it. slurp respects delegation correctly.
+        vault_init_json: "{{ vault_init_output_slurp.content | b64decode | from_json }}"
       no_log: true
       when:
         - not vault_is_initialized
