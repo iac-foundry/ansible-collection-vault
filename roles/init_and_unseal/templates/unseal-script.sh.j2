@@ -89,8 +89,18 @@ chown vault:vault /var/log/vault
 
   # Step 5: Verify unseal status
   echo "Verifying Vault seal status..."
-  sleep 1  # Wait for Vault to process unseal commands
-  FINAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r '.sealed // "unknown"' || echo "error")
+  # A single 1s sleep + one check was not reliably enough: live testing
+  # found Vault correctly unsealed moments later (confirmed via a direct
+  # `vault status` call right after this script reported failure) even
+  # though this exact check reported "unknown" -- a transient race right
+  # after the last unseal call, not a real failure. Retry briefly instead
+  # of trusting a single sample.
+  FINAL_STATUS="unknown"
+  for _ in 1 2 3 4 5; do
+    sleep 1
+    FINAL_STATUS=$(vault status -format=json 2>/dev/null | jq -r '.sealed // "unknown"' || echo "error")
+    [ "$FINAL_STATUS" = "false" ] && break
+  done
 
   if [ "$FINAL_STATUS" = "false" ]; then
     echo "✓ Vault successfully unsealed"
