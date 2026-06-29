@@ -37,9 +37,19 @@ chown vault:vault /var/log/vault
     echo "[$TIMESTAMP] Consider restarting Vault: systemctl restart vault"
   elif [ "$SEALED" = "true" ]; then
     echo "[$TIMESTAMP] ✗ ALERT: Vault is SEALED (unexpected)"
-    echo "[$TIMESTAMP] Attempting to start auto-unseal service..."
-    systemctl start vault-auto-unseal.service
-    echo "[$TIMESTAMP] Auto-unseal service started; check logs at /var/log/vault/unseal.log"
+    echo "[$TIMESTAMP] Attempting to restart auto-unseal service..."
+    # restart, not start: vault-auto-unseal.service is Type=oneshot with
+    # RemainAfterExit=yes, so once it has successfully completed once (the
+    # very first unseal after this role ran), systemd considers it
+    # permanently "active (exited)" -- `systemctl start` on an
+    # already-active service is then a silent no-op. Confirmed live: a
+    # real container restart correctly triggered this branch, but `start`
+    # produced zero new log lines and Vault stayed sealed indefinitely.
+    # `restart` unconditionally re-executes the ExecStart command
+    # regardless of current state, which is exactly what's needed here --
+    # this branch only ever runs when Vault is actually sealed right now.
+    systemctl restart vault-auto-unseal.service
+    echo "[$TIMESTAMP] Auto-unseal service restarted; check logs at /var/log/vault/unseal.log"
   else
     echo "[$TIMESTAMP] ✓ Vault is unsealed (healthy)"
   fi
