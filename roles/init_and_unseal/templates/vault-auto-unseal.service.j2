@@ -1,10 +1,14 @@
 [Unit]
 Description=Vault Auto-Unseal Service
 Documentation=https://www.vaultproject.io/docs/
-Requires=vault.service
-After=network-online.target vault.service
+# No Requires/After on a "vault.service" unit: Vault runs as a Docker
+# container (managed by community.docker.docker_container), not a native
+# systemd service -- that unit never exists, and a dependency on it
+# previously made every attempt to start this service fail outright with
+# "Dependency failed" / result 'dependency', silently preventing
+# auto-unseal from ever running at all.
+After=network-online.target docker.service
 ConditionPathExists={{ vault_unseal_script_path }}
-OnFailure=systemd-log-alert.service
 
 [Service]
 Type=oneshot

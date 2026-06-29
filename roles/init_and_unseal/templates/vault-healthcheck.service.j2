@@ -1,8 +1,13 @@
 [Unit]
 Description=Vault Seal Status Health Check
 Documentation=https://www.vaultproject.io/docs/
-After=vault.service
-BindsTo=vault.service
+# No After/BindsTo on a "vault.service" unit: Vault runs as a Docker
+# container, not a native systemd service -- that unit never exists.
+# BindsTo on a nonexistent unit made every timer-triggered start of this
+# service fail outright with "Dependency failed", so the healthcheck (and
+# therefore its own systemctl start vault-auto-unseal.service call) never
+# actually ran at all.
+After=docker.service
 
 [Service]
 Type=oneshot
@@ -15,9 +20,6 @@ Group=root
 ProtectSystem=full
 ProtectHome=yes
 NoNewPrivileges=yes
-
-# P1-9: If health check fails, log alert
-OnFailure=systemd-log-alert.service
 
 [Install]
 WantedBy=multi-user.target
