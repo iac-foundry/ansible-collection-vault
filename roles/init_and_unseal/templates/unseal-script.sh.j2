@@ -47,8 +47,15 @@ chown vault:vault /var/log/vault
   fi
 
   KEYS=($(jq -r '.keys[]' {{ vault_unseal_keys_path }}))
-  if [ ${#KEYS[@]} -lt {{ vault_unseal_key_threshold }} ]; then
-    echo "✗ Not enough unseal keys (found ${#KEYS[@]}, need {{ vault_unseal_key_threshold }}). Exiting."
+  {# Bash's array-length syntax for KEYS, written verbatim, opens with the
+     same two punctuation characters Jinja2 uses to open a comment block,
+     which previously made Jinja2 scan ahead for a matching close and fail
+     with a template syntax error. Building it as a plain string literal
+     inside an output expression sidesteps that; the count is then reused
+     as a normal shell variable for the rest of this function. #}
+  KEY_COUNT={{ '${#KEYS[@]}' }}
+  if [ "$KEY_COUNT" -lt {{ vault_unseal_key_threshold }} ]; then
+    echo "✗ Not enough unseal keys (found $KEY_COUNT, need {{ vault_unseal_key_threshold }}). Exiting."
     exit 1
   fi
 
