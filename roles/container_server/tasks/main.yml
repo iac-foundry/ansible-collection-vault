@@ -86,6 +86,18 @@
   tags:
     - container_server
 
+- name: Create vault file storage directory (bind-mounted to /vault/file;
+    Docker would otherwise auto-create this as root on first mount, since
+    nothing else in this role creates it ahead of time)
+  ansible.builtin.file:
+    path: "{{ vault_server_data_dir }}/file"
+    state: directory
+    owner: vault
+    group: vault
+    mode: "0700"
+  tags:
+    - container_server
+
 - name: Write TLS certificate to secure location
   ansible.builtin.copy:
     content: "{{ vault_server_tls_cert }}"
@@ -138,6 +150,18 @@
     env:
       VAULT_ADDR: "https://0.0.0.0:8200"
       VAULT_CONFIG_DIR: "/vault/config"
+      # The official image's entrypoint assumes it can run as root to chown
+      # /vault/config, /vault/logs and /vault/file to the vault user, then
+      # setcap cap_ipc_lock on the vault binary itself. Both fail outright
+      # under a non-root user with cap_drop: ALL (one chown call has no
+      # error handling at all in the entrypoint script, so the whole
+      # container exits). Both are unnecessary here: the data/config
+      # directories are already owned by the same uid:gid this container
+      # runs as (set by this role before the container starts), and
+      # IPC_LOCK is already granted at the container level above, not via
+      # the entrypoint's own setcap call.
+      SKIP_CHOWN: "true"
+      SKIP_SETCAP: "true"
     command: "server -config=/vault/config/config.hcl"
   tags:
     - container_server
