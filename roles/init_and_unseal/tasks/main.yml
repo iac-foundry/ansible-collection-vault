@@ -207,7 +207,58 @@
         - vault_backup_verification_enabled
         - operator_backup_confirmation.user_input | lower != 'yes'
 
+    # ===== Resumption path: Vault was already initialized in an earlier,
+    # interrupted run (e.g. the operator gate above aborted the play before
+    # the unseal script / systemd service / audit logging tasks below ever
+    # ran). Those tasks need vault_root_token / vault_unseal_keys as facts,
+    # which the fresh-init path above only sets `when: not
+    # vault_is_initialized`. Re-read the same values from the files this
+    # role already wrote them to on a prior run, so the tasks below work
+    # identically regardless of which path populated the facts. =====
+    - name: "Resumption: read existing root token from {{ vault_root_token_path }}"
+      slurp:
+        src: "{{ vault_root_token_path }}"
+      register: _vault_root_token_resume_slurp
+      no_log: true
+      failed_when: false
+      when:
+        - vault_is_initialized
+        - vault_root_token is not defined
+
+    - name: "Resumption: set vault_root_token fact from file"
+      set_fact:
+        vault_root_token: "{{ _vault_root_token_resume_slurp.content | b64decode }}"
+      no_log: true
+      when:
+        - vault_is_initialized
+        - vault_root_token is not defined
+        - _vault_root_token_resume_slurp is defined
+        - _vault_root_token_resume_slurp.content is defined
+
+    - name: "Resumption: read existing unseal keys from {{ vault_unseal_keys_path }}"
+      slurp:
+        src: "{{ vault_unseal_keys_path }}"
+      register: _vault_unseal_keys_resume_slurp
+      no_log: true
+      failed_when: false
+      when:
+        - vault_is_initialized
+        - vault_unseal_keys is not defined
+
+    - name: "Resumption: set vault_unseal_keys fact from file"
+      set_fact:
+        vault_unseal_keys: "{{ (_vault_unseal_keys_resume_slurp.content | b64decode | from_json).keys }}"
+      no_log: true
+      when:
+        - vault_is_initialized
+        - vault_unseal_keys is not defined
+        - _vault_unseal_keys_resume_slurp is defined
+        - _vault_unseal_keys_resume_slurp.content is defined
+
     # ===== Task 8: Generate unseal script (P1-8 retry logic) =====
+    # Not gated on not vault_is_initialized: template is naturally
+    # idempotent (no change if content is identical), and this must also
+    # run on the resumption path above.
     - name: "Generate unseal script at {{ vault_unseal_script_path }}"
       template:
         src: "unseal-script.sh.j2"
@@ -219,7 +270,6 @@
         vault_keys: "{{ vault_unseal_keys }}"
       no_log: true
       when:
-        - not vault_is_initialized
         - vault_unseal_keys is defined
 
     # ===== Task 9: Create systemd auto-unseal service (P1-8 systemd retry) =====
@@ -231,8 +281,6 @@
         owner: "root"
         group: "root"
       notify: "Reload systemd daemon"
-      when:
-        - not vault_is_initialized
 
     # ===== Task 10: Enable systemd service (do not start yet) =====
     - name: "Enable {{ vault_unseal_service_name }} service (disabled until operator unseals)"
@@ -240,8 +288,6 @@
         name: "{{ vault_unseal_service_name }}"
         enabled: yes
         daemon_reload: yes
-      when:
-        - not vault_is_initialized
 
     # ===== Task 11: Create healthcheck timer (P1-9 mitigation) =====
     - name: "Create systemd timer for periodic seal status checks"
@@ -301,7 +347,6 @@
       changed_when: "'Success' in audit_enable_result.stdout"
       no_log: true
       when:
-        - not vault_is_initialized
         - vault_root_token is defined
       retries: 3
       delay: 2
