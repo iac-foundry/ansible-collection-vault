@@ -255,6 +255,66 @@
         - _vault_unseal_keys_resume_slurp is defined
         - _vault_unseal_keys_resume_slurp.content is defined
 
+    # ===== Resumption self-heal: root token file missing but Vault is
+    # initialized. Vault root tokens cannot be read back after creation, so
+    # if the on-disk copy is gone (manually removed, or removed by an older
+    # version of this flow that deleted it), the only way to recover admin
+    # access -- without an existing privileged token -- is `vault operator
+    # generate-root`, authorized by a quorum of the unseal keys (which are
+    # retained on this host for auto-unseal anyway). Mints a fresh root
+    # token, writes it back to vault_root_token_path, and sets the fact, so
+    # downstream phases that read the token file keep working. Unseal keys
+    # are read straight from their file by jq inside the shell -- never
+    # passed through the command line. =====
+    - name: "Resumption: regenerate root token via generate-root (token file missing)"
+      environment:
+        VAULT_ADDR: "{{ vault_api_endpoint }}"
+        VAULT_CACERT: "{{ vault_cacert_path }}"
+      ansible.builtin.shell: |
+        set -o pipefail
+        otp=$(vault operator generate-root -generate-otp)
+        nonce=$(vault operator generate-root -init -otp="$otp" -format=json | jq -r .nonce)
+        encoded=""
+        mapfile -t keys < <(jq -r '.keys[]' "{{ vault_unseal_keys_path }}")
+        for i in $(seq 0 $(({{ vault_unseal_key_threshold }} - 1))); do
+          encoded=$(vault operator generate-root -nonce="$nonce" -format=json "${keys[$i]}" | jq -r '.encoded_token // empty')
+        done
+        vault operator generate-root -decode="$encoded" -otp="$otp"
+      args:
+        executable: /bin/bash
+      register: _regenerated_root_token
+      no_log: true
+      changed_when: true
+      when:
+        - vault_is_initialized
+        - vault_root_token is not defined
+        - vault_unseal_keys is defined
+
+    - name: "Resumption: persist and set fact for regenerated root token"
+      set_fact:
+        vault_root_token: "{{ _regenerated_root_token.stdout | trim }}"
+      no_log: true
+      when:
+        - vault_is_initialized
+        - vault_root_token is not defined
+        - _regenerated_root_token is defined
+        - _regenerated_root_token.stdout is defined
+        - (_regenerated_root_token.stdout | trim | length) > 0
+
+    - name: "Resumption: write regenerated root token to {{ vault_root_token_path }}"
+      copy:
+        content: "{{ vault_root_token }}"
+        dest: "{{ vault_root_token_path }}"
+        mode: "0600"
+        owner: "root"
+        group: "root"
+      no_log: true
+      when:
+        - vault_is_initialized
+        - _regenerated_root_token is defined
+        - _regenerated_root_token.stdout is defined
+        - (_regenerated_root_token.stdout | trim | length) > 0
+
     # ===== Task 8: Generate unseal script (P1-8 retry logic) =====
     # Not gated on not vault_is_initialized: template is naturally
     # idempotent (no change if content is identical), and this must also
